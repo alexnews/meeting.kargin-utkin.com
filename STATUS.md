@@ -2,79 +2,67 @@
 
 Live state. Not a log. Delete lines that stop being true.
 
-**Phase:** v0.1 design rewrite, after a scope pivot on 2026-09-11.
+**Version:** v0.1, working end to end. Public at
+`github.com/alexnews/meeting.kargin-utkin.com`, CI green on every push.
 
-## The pivot
+## What works right now
 
-The original five-phase plan in `docs/MVP_SPEC.md` is suspended. The owner needs
-a tool usable for real work, installable in one command, and is not willing to
-spend months to find out whether local LLM extraction is good enough.
+```bash
+make setup
+.venv/bin/meetinglens process ~/Downloads/"meeting.mp4" -t ~/Downloads/"meeting.vtt"
+```
 
-**v0.1 is the deterministic subset only. No LLM anywhere.** Record a Teams
-meeting, run one command, get a markdown file: the transcript interleaved with
-every slide that was shown, OCR text, thumbnails, real speaker names. Nothing in
-it can hallucinate because nothing in it makes a judgement.
+Writes `~/Documents/MeetingLens/<date>-<slug>/` with a markdown file and its
+keyframe images: the transcript interleaved with every slide shown, slide text
+quoted, thumbnails inline, real speaker names, and the user marked as `(you)`.
 
-Everything else stays designed but unbuilt, reconsidered after the owner has used
-v0.1 for a month: LLM extraction, gap detection, the commitment ledger, embeddings
-and semantic search, native capture.
+Pipeline: `ingest -> keyframes -> transcript -> ocr -> export`. No language model
+anywhere. 57 tests, ruff clean, mypy strict clean.
 
-## Decided in the pivot, do not relitigate
-
-- **SQLite, not Postgres or pgvector.** One file in `~/.meetinglens/`. No Docker,
-  no database server. Vector search at one person's data volume is a numpy dot
-  product. This deliberately breaks the owner's cross-project Postgres convention
-  because install simplicity is the priority for this project.
-- **Microsoft Teams is the recording source.** Teams produces a `.vtt` transcript
-  with real participant names alongside the `.mp4`. That removes the ASR step
-  entirely on the fast path, removes the model download, gives better speaker
-  attribution than the mic/system split, and handles consent because Teams
-  notifies all participants that recording started.
-- **faster-whisper is a fallback only**, used when no `.vtt` exists. Optional
-  install extra, not a base dependency.
-- **No OBS.** Recording a work meeting silently is a policy and legal risk that
-  Teams-native recording avoids.
-- **ffmpeg ships inside the wheel** via `imageio-ffmpeg`. No brew install.
-- CI on GitHub-hosted runners while the repository is public. If it ever goes
-  private, workflows move to self-hosted in that same commit.
-
-## Where things stand
-
-Repository is public at `git@github.com:alexnews/meeting.kargin-utkin.com.git`,
-pushed, on `main`.
-
-Two calibration findings are already locked in by tests, see DECISIONS 0007 and
-0008: the textbook 64-bit dHash cannot tell slides apart (a different slide
-moved 7 bits, adding a bullet moved 3), so hashing is 24x24 with a threshold of
-24; and a keyframe's image comes from the last frame of its span, which resolves
-animated builds to the finished slide with no build detection.
-
-## Built and working
-
-- Package installs: `make setup` then `.venv/bin/meetinglens --help`.
-- SQLite schema, forward-only migration runner, idempotent and tested.
-- `ingest`: probes the recording, writes the meeting row.
-- `keyframes`: decodes once at 1 fps, 24x24 dHash, stability gate, writes WebP.
-  Proven end to end against a generated video, not mocks.
-- 28 tests, ruff clean, mypy strict clean.
-
-## In flight
-
-Next: `transcript` (Teams .vtt parser, then the faster-whisper fallback), then
-`ocr`, then `align` and `export`.
+Measured on a generated three minute 720p recording with ten topics, each with
+an animated build: 4.7 s end to end, 10 of 10 slides found, builds collapsed to
+their finished state.
 
 ## Blocked on the owner
 
-- **Does your Teams org produce transcripts?** Open a past recording in OneDrive
-  or the Teams chat and check for a transcript tab or `.vtt` download. Yes means
-  the fast path; no means the faster-whisper fallback, a 500 MB model download and
-  no speaker names. Not blocking: both paths get built.
+- **Run it on one real Teams recording.** This is the only thing that matters
+  now. Every number above comes from generated fixtures. Two thresholds are
+  expected to need tuning against real video, and both are environment
+  variables, so tuning costs nothing: `MEETINGLENS_DHASH_THRESHOLD` (default 24)
+  and `MEETINGLENS_OCR_MIN_COVERAGE` (default 0.015).
+- **Check whether your Teams tenant produces transcripts.** Open a past
+  recording in OneDrive or the meeting chat and look for a `.vtt` download. If
+  it is missing, the faster-whisper fallback installs with the `asr` extra and
+  costs a model download plus the speaker names.
 
-## Known broken
+## Known gaps
 
-- `meetinglens process` exits 2. It is wired to the database but no stages are
-  connected to it yet.
-- The public README advertises a quick start that does not work and describes
-  the wrong architecture. Rewritten once export lands.
-- `docs/MVP_SPEC.md` describes the suspended plan. It stays as the long-term
-  vision but no longer describes what is being built.
+- Thresholds are calibrated on synthetic slides only. Real Teams recordings
+  composite participant thumbnails over shared content, which has never been
+  tested here.
+- Teams recordings are 1080p and longer; only 720p and three minutes have been
+  measured.
+- There is no `meetinglens list` or `meetinglens open`. One meeting, one command.
+- The faster-whisper fallback path has never been executed. It is wired and its
+  failure mode is tested, but no meeting has been transcribed with it.
+
+## Decided, do not relitigate
+
+- **No language model in v0.1.** The tool must be incapable of fabricating.
+- **SQLite, not Postgres.** One file, no Docker. Deliberately breaks the
+  cross-project Postgres convention because install simplicity wins here.
+- **Teams-native recording only.** It announces itself to participants, which is
+  how consent should work. No silent third-party recorder.
+- **GitHub-hosted CI while the repository is public.** Free, and a stranger's
+  pull request runs in a throwaway VM rather than on a machine we own. If the
+  repository ever goes private, workflows move to self-hosted in that commit.
+- **No media in git, ever.** Fixtures are generated at test time and
+  `scripts/check_no_media.py` fails the build otherwise.
+
+## Suspended, not cancelled
+
+`docs/MVP_SPEC.md` holds the larger plan: typed extraction of decisions and
+commitments, gap detection, a cross-meeting commitment ledger, a pre-meeting
+brief. `docs/superpowers/specs/2026-09-11-meetinglens-delivery-design.md` holds
+its evaluation design, grounding contract and fabrication metrics. Revisit only
+after v0.1 has been in daily use for a month.
