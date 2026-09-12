@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from meetinglens.errors import ConfigError
+from meetinglens.media.dhash import DEFAULT_THRESHOLD
 
 DEFAULT_HOME = Path.home() / ".meetinglens"
 DEFAULT_OUTPUT_DIR = Path.home() / "Documents" / "MeetingLens"
@@ -68,7 +69,7 @@ class Settings:
             home=_env_path("MEETINGLENS_HOME", DEFAULT_HOME),
             output_dir=_env_path("MEETINGLENS_OUTPUT_DIR", DEFAULT_OUTPUT_DIR),
             keyframe_fps=_env_int("MEETINGLENS_KEYFRAME_FPS", 1),
-            dhash_threshold=_env_int("MEETINGLENS_DHASH_THRESHOLD", 8),
+            dhash_threshold=_env_int("MEETINGLENS_DHASH_THRESHOLD", DEFAULT_THRESHOLD),
             stability_ms=_env_int("MEETINGLENS_STABILITY_MS", 2000),
             webp_quality=_env_int("MEETINGLENS_WEBP_QUALITY", 80),
             ocr_min_chars=_env_int("MEETINGLENS_OCR_MIN_CHARS", 20),

@@ -59,3 +59,63 @@ plain worker loop.
 
 **Consequence.** One fewer service to run for a local-first desktop product.
 Throughput is irrelevant here — this processes a handful of meetings a day.
+
+---
+
+## 0005 — SQLite, not Postgres with pgvector
+
+**Context.** v0.1 is a single-user command line tool. Postgres plus pgvector was
+the largest install barrier after the models, and v0.1 has no vector search at
+all.
+
+**Decision.** One SQLite file at `~/.meetinglens/meetinglens.db`. Supersedes 0004.
+
+**Consequence.** Install is one command with no Docker and no database server.
+This deliberately breaks the cross-project Postgres convention, for this project
+only, because install simplicity is the stated priority.
+
+---
+
+## 0006 — Teams supplies the transcript, so there is no diarization problem
+
+**Context.** 0002 chose a mic/system two-track split to avoid pyannote. That
+required the user to run a separate recorder.
+
+**Decision.** Take the `.vtt` Teams writes alongside its own recording. It
+carries real participant names. Supersedes 0002. `faster-whisper` becomes an
+optional fallback for meetings with no transcript, superseding 0003.
+
+**Consequence.** No ASR on the fast path, so an hour processes in under a minute
+with no model download. Better attribution than mic/system gave. Consent is also
+handled, because Teams announces its own recording and a third-party recorder
+does not.
+
+---
+
+## 0007 — dHash at 24x24, not the textbook 8x8
+
+**Context.** The 64-bit dHash could not tell slides apart. Measured on rendered
+slides: adding a bullet moved 3 bits, while a completely different slide moved
+7. No threshold separates a 3 from a 7.
+
+**Decision.** Hash at 24x24, giving 576 bits, with a default threshold of 24.
+The same pair measure 12 bits for the build step against 38 for the different
+slide, which is a wide, safe window.
+
+**Consequence.** Hashes are 144 hex characters instead of 16, which is
+irrelevant at this scale. The measurement is reproduced by the tests in
+`tests/test_dhash.py`, so a future change that narrows the window fails CI.
+
+---
+
+## 0008 — A keyframe's image comes from the last frame of its span
+
+**Context.** Slides that build one bullet at a time move the hash very little,
+so the whole build stays inside the threshold and forms a single keyframe. Using
+the first frame of that span captures the slide with one bullet on it.
+
+**Decision.** `frame_index` is the last sampled frame that matched the keyframe.
+
+**Consequence.** Animated builds resolve to the finished slide with no build
+detection, no pixel heuristics and no special case. For a static slide it
+changes nothing.
