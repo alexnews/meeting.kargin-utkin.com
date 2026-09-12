@@ -101,3 +101,19 @@ def test_a_slide_returning_later_is_a_second_keyframe() -> None:
 def test_stability_window_is_honoured() -> None:
     # B appears for one frame only, a frame short of the window, so it never commits.
     assert run([A, A, A, B, C, C, C]) == [(2, 0, 4_000), (6, 4_000, 7_000)]
+
+
+def test_a_drifting_slide_does_not_absorb_the_next_one() -> None:
+    """Regression: the comparison anchor must follow the slide as it builds.
+
+    A slide drifts from h(0) to h(17) as bullets appear, each step inside the
+    threshold. The next slide is h(3): far from where the drifting slide ended
+    up, but close to where it started. Anchoring on the committed hash treats it
+    as the same screen and loses a slide; anchoring on the most recent frame
+    sees the change.
+    """
+    drift = [h(0), h(0), h(5), h(11), h(17), h(17)]
+    following = [h(3)] * 3
+    found = run(drift + following)
+    assert len(found) == 2, "the second slide was absorbed into the first"
+    assert found[1][1] == 6_000

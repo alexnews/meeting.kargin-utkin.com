@@ -28,10 +28,14 @@ MERGE_GAP_MS = 2000
 UNKNOWN_SPEAKER = "Unknown"
 
 ASR_MISSING = (
-    "No transcript was supplied and faster-whisper is not installed.\n"
-    "Either export the transcript from Teams and pass it with --transcript,\n"
-    'or install the fallback: uv tool install "meetinglens[asr]"'
+    "no transcript supplied and faster-whisper is not installed, so this meeting\n"
+    "           has slides but no speech. Export the transcript from Teams and pass it\n"
+    '           with --transcript, or install the fallback: uv tool install "meetinglens[asr]"'
 )
+
+
+class TranscriptUnavailable(StageError):
+    """No transcript to work from. Slides are still worth exporting."""
 
 
 def _transcribe_locally(video: Path, model_name: str) -> list[Cue]:
@@ -39,7 +43,7 @@ def _transcribe_locally(video: Path, model_name: str) -> list[Cue]:
     try:
         from faster_whisper import WhisperModel
     except ImportError as exc:
-        raise StageError(ASR_MISSING) from exc
+        raise TranscriptUnavailable(ASR_MISSING) from exc
 
     with tempfile.TemporaryDirectory() as scratch:
         audio = Path(scratch) / "audio.wav"

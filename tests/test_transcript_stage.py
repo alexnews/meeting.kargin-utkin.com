@@ -6,6 +6,8 @@ import sqlite3
 from dataclasses import replace
 from pathlib import Path
 
+import pytest
+
 from meetinglens.config import Settings
 from meetinglens.stages import ingest, transcript
 from tests.slides import render_slide
@@ -89,3 +91,31 @@ def test_running_twice_leaves_the_same_rows(
         "SELECT count(*) AS n FROM speaker WHERE meeting_id = ?", (meeting_id,)
     ).fetchone()
     assert speakers["n"] == 2, "a second run must not duplicate speakers"
+
+
+def test_a_missing_fallback_is_its_own_error_so_slides_still_export(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Without a transcript and without faster-whisper, this must be recoverable.
+
+    A meeting with slides and no speech is still worth exporting, so the CLI
+    catches this specific error rather than failing the whole run.
+    """
+    import builtins
+
+    real_import = builtins.__import__
+
+    def no_faster_whisper(name: str, *args: object, **kwargs: object) -> object:
+        if name == "faster_whisper":
+            raise ImportError("not installed")
+        return real_import(name, *args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(builtins, "__import__", no_faster_whisper)
+
+    video, _ = _recording(tmp_path, with_transcript=False)
+    meeting_id = ingest.run(conn, video, title="Sync")
+    with pytest.raises(transcript.TranscriptUnavailable, match="faster-whisper"):
+        transcript.run(conn, settings, meeting_id)

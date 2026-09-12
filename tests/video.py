@@ -16,7 +16,10 @@ from PIL import Image
 
 from meetinglens.media.ffmpeg import ffmpeg_binary
 
-VIDEO_SIZE = (640, 360)
+# 720p, matching what Teams records. At 640x360 the text is small enough that
+# OCR starts dropping the spaces between words, which is a property of the
+# fixture rather than of the pipeline.
+VIDEO_SIZE = (1280, 720)
 
 
 @dataclass(frozen=True)

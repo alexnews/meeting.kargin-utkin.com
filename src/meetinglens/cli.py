@@ -15,6 +15,8 @@ from meetinglens import __version__
 from meetinglens.config import Settings
 from meetinglens.db import open_migrated
 from meetinglens.errors import MeetingLensError
+from meetinglens.stages import export, ingest, keyframes, ocr
+from meetinglens.stages import transcript as transcript_stage
 
 app = typer.Typer(
     no_args_is_help=True,
@@ -51,20 +53,52 @@ def process(
         str | None,
         typer.Option("--title", help="Meeting title. Defaults to the filename."),
     ] = None,
+    out: Annotated[
+        Path | None,
+        typer.Option(
+            "--out",
+            file_okay=False,
+            help="Where to write. Defaults to the configured output directory.",
+        ),
+    ] = None,
+    force: Annotated[
+        bool,
+        typer.Option("--force", help="Redo every stage instead of reusing finished ones."),
+    ] = False,
 ) -> None:
     """Process a recording into a markdown file."""
     settings = Settings.load()
     try:
         conn = open_migrated(settings.db_path)
-    except MeetingLensError as exc:
-        raise typer.Exit(code=1) from exc
-    conn.close()
-    typer.echo(
-        f"not yet implemented: process {video.name}"
-        f"{' with ' + transcript.name if transcript else ''}"
-        f"{' titled ' + title if title else ''}"
-    )
-    raise typer.Exit(code=2)
+
+        typer.echo(f"reading    {video.name}")
+        meeting_id = ingest.run(conn, video, transcript=transcript, title=title)
+
+        typer.echo("keyframes  detecting screen changes")
+        found = keyframes.run(conn, settings, meeting_id, force=force)
+
+        source = transcript.name if transcript else "no transcript, transcribing locally"
+        typer.echo(f"transcript {source}")
+        try:
+            turns = transcript_stage.run(conn, settings, meeting_id, force=force)
+        except transcript_stage.TranscriptUnavailable as unavailable:
+            typer.secho(f"           {unavailable}", fg=typer.colors.YELLOW, err=True)
+            turns = 0
+
+        typer.echo(f"ocr        reading {found} keyframes")
+        kept = ocr.run(conn, settings, meeting_id, force=force)
+
+        typer.echo("export     writing markdown")
+        result = export.run(conn, settings, meeting_id, output_dir=out)
+        conn.close()
+    except MeetingLensError as error:
+        typer.secho(str(error), fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1) from error
+
+    dropped = found - kept
+    typer.echo("")
+    typer.echo(f"{kept} slides kept, {dropped} dropped, {turns} turns")
+    typer.echo(str(result.markdown))
 
 
 @db_app.command("path")

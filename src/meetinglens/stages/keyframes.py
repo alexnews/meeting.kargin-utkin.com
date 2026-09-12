@@ -47,7 +47,15 @@ class DetectedKeyframe:
 
 @dataclass
 class _Open:
-    """A committed keyframe still accumulating frames."""
+    """A committed keyframe still accumulating frames.
+
+    `dhash` rolls forward to the most recent matching frame rather than staying
+    at the hash the keyframe was committed with. That matters: a slide that
+    builds drifts away from its opening state, and comparing against the stale
+    opening hash lets the next slide look similar to it. Two different slides
+    sharing a layout, a title and two bullet lines, hash close together, while
+    the actual frame-to-frame jump between them is large.
+    """
 
     frame_index: int
     start_ms: int
@@ -87,9 +95,12 @@ def detect(
         end_of_frame = start_of_frame + frame_interval_ms
 
         if current is not None and hamming(frame_hash, current.dhash) < threshold:
-            # Same screen. Extend it, and forget any change that did not stick.
+            # Same screen. Extend it, roll the anchor forward so a slowly
+            # building slide does not leave the comparison behind, and forget
+            # any change that did not stick.
             current.end_ms = end_of_frame
             current.frame_index = index
+            current.dhash = frame_hash
             candidate = None
             continue
 

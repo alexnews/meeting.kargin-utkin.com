@@ -119,3 +119,20 @@ the first frame of that span captures the slide with one bullet on it.
 **Consequence.** Animated builds resolve to the finished slide with no build
 detection, no pixel heuristics and no special case. For a static slide it
 changes nothing.
+
+---
+
+## 0009 — The keyframe comparison anchor rolls forward
+
+**Context.** Frames were compared against the hash a keyframe was committed
+with. On a three minute fixture with ten topics, two topics vanished: a slide
+that builds drifts away from its opening state, and the next slide then looked
+similar to that stale opening hash. Two different slides sharing a layout, a
+title and two bullet lines, hash close together.
+
+**Decision.** The anchor rolls forward to the most recent matching frame.
+
+**Consequence.** Measured on the fixture: identical frames 0 bits apart, a build
+step 6 to 17, a new topic 29 to 44. Frame to frame, a threshold of 24 separates
+them with room on both sides. Returning to a slide after a popup is still one
+keyframe, because the anchor is only rolled while the screen matches.
