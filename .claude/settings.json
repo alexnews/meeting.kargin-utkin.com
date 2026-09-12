@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make *)",
+      "Bash(docker compose *)",
+      "Bash(ffmpeg *)",
+      "Bash(ffprobe *)",
+      "Bash(psql *)",
+      "Bash(.venv/bin/pytest *)",
+      "Bash(.venv/bin/ruff *)",
+      "Bash(.venv/bin/mypy *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(pip install *)",
+      "Bash(npm install *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./storage/**)",
+      "Read(./evals/golden/*/media/**)"
+    ]
+  }
+}
