@@ -2,54 +2,70 @@
 
 Live state. Not a log. Delete lines that stop being true.
 
-**Phase:** 0 (delivery machinery). See `docs/superpowers/specs/2026-09-11-meetinglens-delivery-design.md`.
+**Phase:** v0.1 design rewrite, after a scope pivot on 2026-09-11.
+
+## The pivot
+
+The original five-phase plan in `docs/MVP_SPEC.md` is suspended. The owner needs
+a tool usable for real work, installable in one command, and is not willing to
+spend months to find out whether local LLM extraction is good enough.
+
+**v0.1 is the deterministic subset only. No LLM anywhere.** Record a Teams
+meeting, run one command, get a markdown file: the transcript interleaved with
+every slide that was shown, OCR text, thumbnails, real speaker names. Nothing in
+it can hallucinate because nothing in it makes a judgement.
+
+Everything else stays designed but unbuilt, reconsidered after the owner has used
+v0.1 for a month: LLM extraction, gap detection, the commitment ledger, embeddings
+and semantic search, native capture.
+
+## Decided in the pivot, do not relitigate
+
+- **SQLite, not Postgres or pgvector.** One file in `~/.meetinglens/`. No Docker,
+  no database server. Vector search at one person's data volume is a numpy dot
+  product. This deliberately breaks the owner's cross-project Postgres convention
+  because install simplicity is the priority for this project.
+- **Microsoft Teams is the recording source.** Teams produces a `.vtt` transcript
+  with real participant names alongside the `.mp4`. That removes the ASR step
+  entirely on the fast path, removes the model download, gives better speaker
+  attribution than the mic/system split, and handles consent because Teams
+  notifies all participants that recording started.
+- **faster-whisper is a fallback only**, used when no `.vtt` exists. Optional
+  install extra, not a base dependency.
+- **No OBS.** Recording a work meeting silently is a policy and legal risk that
+  Teams-native recording avoids.
+- **ffmpeg ships inside the wheel** via `imageio-ffmpeg`. No brew install.
+- CI on GitHub-hosted runners while the repository is public. If it ever goes
+  private, workflows move to self-hosted in that same commit.
 
 ## Where things stand
 
-Git repository initialised on `main` and pushed to
-`git@github.com:alexnews/meeting.kargin-utkin.com.git`. The repository is
-public. The scaffold is unpacked and committed.
+Repository is public at `git@github.com:alexnews/meeting.kargin-utkin.com.git`,
+pushed, on `main`. Two commits. No application code exists yet: the ten stage
+stubs in `worker/stages/` all raise `NotImplementedError`, and `core/config.py`,
+`core/db.py`, `cli/` entry points and `worker/run.py` do not exist.
 
-There is no application code yet: all ten stage modules in `worker/stages/` are
-seven-line stubs that raise `NotImplementedError`, `core/llm/base.py` defines the
-Protocol but `get_provider()` raises, and `core/config.py`, `core/db.py`,
-`core/models.py`, `cli/migrate.py`, `cli/meetinglens.py`, `worker/run.py` and
-`api/main.py` do not exist. The Makefile targets point at those missing modules,
-so every target except `help` currently fails. `migrations/0001_init.sql` is real
-and complete.
+`migrations/0001_init.sql` is real but is **now obsolete**: it is Postgres with
+pgvector and the schema assumes mic/system tracks. It gets replaced by a SQLite
+schema in the rewrite.
+
+## In flight
+
+Rewriting `docs/superpowers/specs/2026-09-11-meetinglens-delivery-design.md`.
+Most of it is wrong after the pivot: Postgres, Docker, the five-phase plan, the
+mic/system diarization shortcut, and the cassette layer for LLM calls all go.
 
 ## Blocked on the owner
 
-- **Design spec review.** The delivery design has not been explicitly approved.
-  It is pushed but no code depends on it yet, so changing it is still cheap.
-
-## Not started
-
-Phase 0 remaining: CI workflows (lanes A, B, S), gitleaks and the large-file
-guard, `LICENSE`, `SECURITY.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`,
-`CHANGELOG.md`, `deploy.sh`, the static site skeleton, and the two new
-`DECISIONS.md` entries (hosted-runner exception, ASR and OCR stack swaps).
-
-Phase 0 is done when a deliberately broken pull request goes red, a fixed one
-goes green, and both gitleaks and the large-file guard provably block a test
-commit.
+- **Does your Teams org produce transcripts?** Open a past recording in OneDrive
+  or the Teams chat and check for a transcript tab or `.vtt` download. Yes means
+  the fast path; no means the faster-whisper fallback, a 500 MB model download and
+  no speaker names. Not blocking: both paths get built.
 
 ## Known broken
 
-- `make setup`, `make migrate`, `make demo` and every other target fail. Expected
-  at Phase 0; the modules they invoke are written in Phase 1.
-- **The public README promises commands that do not work.** Its quick start shows
-  `make setup` through `make demo`. On a public repository that reads as a
-  broken project to anyone who tries it. Phase 0 fixes this by marking the quick
-  start as not yet available and saying plainly what does work today.
-
-## Decided, do not relitigate
-
-- CI runs on GitHub-hosted runners while this repository is public. Free, and it
-  keeps strangers' pull requests off the production box. If the repository ever
-  goes private, the workflows move to self-hosted in that same commit.
-- Deploy stays a manual `./deploy.sh`. No timer, no polling, no push-to-deploy.
-- Real-model evals run manually on the owner's Mac, not in CI. A laptop is the
-  deployment target, so laptop numbers are the honest ones.
-- ASR default is faster-whisper; OCR is RapidOCR. whisper.cpp and WhisperX stay
-  as opt-in backends and all three get benchmarked on the golden set.
+- Every `make` target fails. The modules they invoke do not exist yet.
+- The public README advertises a quick start that does not work, and now also
+  describes the wrong architecture. Rewritten as part of v0.1.
+- `docs/MVP_SPEC.md` describes the suspended plan. It stays as the long-term
+  vision but no longer describes what is being built.
