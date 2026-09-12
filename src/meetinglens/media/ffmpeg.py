@@ -185,3 +185,28 @@ def extract_still(path: Path, *, at_ms: int, destination: Path, quality: int) ->
             )
         with Image.open(intermediate) as still:
             still.convert("RGB").save(destination, "WEBP", quality=quality, method=6)
+
+
+def extract_audio(path: Path, destination: Path) -> None:
+    """Demux to 16 kHz mono WAV, which is what speech models expect."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        ffmpeg_binary(),
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-y",
+        "-i",
+        str(path),
+        "-vn",
+        "-ac",
+        "1",
+        "-ar",
+        "16000",
+        "-c:a",
+        "pcm_s16le",
+        str(destination),
+    ]
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if result.returncode != 0 or not destination.exists():
+        raise MediaError(f"could not extract audio from {path.name}: {result.stderr.strip()[:400]}")

@@ -9,33 +9,12 @@ import pytest
 from PIL import Image
 
 from meetinglens.config import Settings
-from meetinglens.db import open_migrated
 from meetinglens.stages import ingest, keyframes
 from tests.slides import render_slide
 from tests.video import Scene, write_video
 
 ROADMAP = ["Migrate warehouse", "Kill legacy API", "Pricing model", "Hire two engineers"]
 REVENUE = ["Q1 up 12 percent", "Q2 flat", "Q3 down on churn"]
-
-
-@pytest.fixture
-def settings(tmp_path: Path) -> Settings:
-    base = Settings.load()
-    return Settings(
-        home=tmp_path / "home",
-        output_dir=tmp_path / "out",
-        keyframe_fps=base.keyframe_fps,
-        dhash_threshold=base.dhash_threshold,
-        stability_ms=base.stability_ms,
-        webp_quality=base.webp_quality,
-        ocr_min_chars=base.ocr_min_chars,
-        self_name=None,
-    )
-
-
-@pytest.fixture
-def conn(settings: Settings) -> sqlite3.Connection:
-    return open_migrated(settings.db_path)
 
 
 def _two_slide_recording(path: Path) -> Path:
