@@ -42,8 +42,11 @@ CREATE TABLE keyframe (
     kind        TEXT NOT NULL DEFAULT 'slide',
     ocr_text    TEXT,
     dropped     INTEGER NOT NULL DEFAULT 0,
-    drop_reason TEXT,
-    UNIQUE (meeting_id, start_ms)
+    drop_reason TEXT
+    -- Deliberately no UNIQUE on (meeting_id, start_ms). When the superset pass
+    -- collapses a slide build, the surviving frame takes over the dropped
+    -- frame's span, so two rows share a start_ms until one of them is marked
+    -- dropped. Dropped rows are kept so a threshold can be retuned.
 );
 CREATE INDEX keyframe_meeting_start ON keyframe (meeting_id, start_ms);
 

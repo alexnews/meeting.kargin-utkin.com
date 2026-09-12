@@ -23,6 +23,7 @@ def settings(tmp_path: Path) -> Settings:
         stability_ms=defaults.stability_ms,
         webp_quality=defaults.webp_quality,
         ocr_min_chars=defaults.ocr_min_chars,
+        ocr_min_coverage=defaults.ocr_min_coverage,
         self_name=None,
     )
 

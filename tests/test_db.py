@@ -18,8 +18,11 @@ def _tables(conn: sqlite3.Connection) -> set[str]:
 def test_migrate_creates_the_schema(tmp_path: Path) -> None:
     conn = connect(tmp_path / "t.db")
     applied = migrate(conn)
-    assert applied == ["0001_init.sql"]
+    assert applied == sorted(applied), "migrations must apply in filename order"
+    assert applied[0] == "0001_init.sql"
     assert _tables(conn) >= EXPECTED_TABLES
+    columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(keyframe)")}
+    assert {"ocr_text", "text_coverage", "dropped", "drop_reason"} <= columns
 
 
 def test_migrate_is_idempotent(tmp_path: Path) -> None:

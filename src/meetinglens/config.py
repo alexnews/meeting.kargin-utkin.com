@@ -28,6 +28,16 @@ def _env_int(name: str, default: int) -> int:
         raise ConfigError(f"{name} must be an integer, got {raw!r}") from exc
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be a number, got {raw!r}") from exc
+
+
 def _env_path(name: str, default: Path) -> Path:
     raw = os.environ.get(name)
     if raw is None or not raw.strip():
@@ -50,6 +60,7 @@ class Settings:
 
     # post-OCR passes
     ocr_min_chars: int
+    ocr_min_coverage: float
 
     # speaker resolution
     self_name: str | None
@@ -73,5 +84,6 @@ class Settings:
             stability_ms=_env_int("MEETINGLENS_STABILITY_MS", 2000),
             webp_quality=_env_int("MEETINGLENS_WEBP_QUALITY", 80),
             ocr_min_chars=_env_int("MEETINGLENS_OCR_MIN_CHARS", 20),
+            ocr_min_coverage=_env_float("MEETINGLENS_OCR_MIN_COVERAGE", 0.015),
             self_name=self_name.strip() if self_name else None,
         )
