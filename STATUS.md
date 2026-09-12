@@ -6,7 +6,10 @@ Live state. Not a log. Delete lines that stop being true.
 
 ## Where things stand
 
-Git repository initialised on `main`. The scaffold is unpacked and committed.
+Git repository initialised on `main` and pushed to
+`git@github.com:alexnews/meeting.kargin-utkin.com.git`. The repository is
+public. The scaffold is unpacked and committed.
+
 There is no application code yet: all ten stage modules in `worker/stages/` are
 seven-line stubs that raise `NotImplementedError`, `core/llm/base.py` defines the
 Protocol but `get_provider()` raises, and `core/config.py`, `core/db.py`,
@@ -17,11 +20,8 @@ and complete.
 
 ## Blocked on the owner
 
-- **GitHub remote URL.** The repository exists on GitHub but the URL has not been
-  given here, so nothing has been pushed. Run `git remote add origin <url>` then
-  `git push -u origin main`.
 - **Design spec review.** The delivery design has not been explicitly approved.
-  Nothing is pushed, so changing it is still free.
+  It is pushed but no code depends on it yet, so changing it is still cheap.
 
 ## Not started
 
@@ -38,6 +38,10 @@ commit.
 
 - `make setup`, `make migrate`, `make demo` and every other target fail. Expected
   at Phase 0; the modules they invoke are written in Phase 1.
+- **The public README promises commands that do not work.** Its quick start shows
+  `make setup` through `make demo`. On a public repository that reads as a
+  broken project to anyone who tries it. Phase 0 fixes this by marking the quick
+  start as not yet available and saying plainly what does work today.
 
 ## Decided, do not relitigate
 
