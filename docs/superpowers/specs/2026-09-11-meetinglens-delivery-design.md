@@ -1,7 +1,13 @@
 # MeetingLens delivery design
 
 **Date:** 2026-09-11
-**Status:** approved design, pending implementation plan
+**Status:** SUPERSEDED by `2026-09-11-meetinglens-v0.1-design.md`.
+
+Superseded on the same day by a scope pivot. This document assumed Postgres,
+Docker, a five-phase plan, mic/system diarization and an LLM extraction layer.
+None of that is being built. It is kept because its evaluation design, grounding
+contract and fabrication metrics are the right starting point if v0.2 ever adds
+the LLM layer. Do not implement from this file.
 **Scope:** how MeetingLens gets built, tested, secured and published across Phases 0-5.
 
 This document does not restate the product. `docs/MVP_SPEC.md` is the product

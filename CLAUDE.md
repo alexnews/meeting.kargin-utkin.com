@@ -4,98 +4,129 @@ Project instructions for Claude Code. Read this fully before writing code.
 
 ## What this is
 
-**MeetingLens** — a local-first meeting intelligence tool. It ingests meeting audio **and** the screen recording, and produces a typed, source-grounded record of what was decided and promised, then carries those commitments across meetings.
+**MeetingLens** turns a Microsoft Teams meeting recording into one markdown file:
+the transcript interleaved with every slide that was on screen, each slide's text
+extracted, thumbnails inline, real speaker names.
 
-It is **not** a transcript summarizer. That market is saturated. The thesis:
+It is **not** a transcript summarizer, and in v0.1 it is not an AI product at
+all. Every output is a mechanical transformation of the input.
 
-> ingest messy multimodal input → extract into a **typed schema** → ground every field to its exact source → run a **gap-detection** pass → export something auditable
+Current design: `docs/superpowers/specs/2026-09-11-meetinglens-v0.1-design.md`.
+Read it before starting work.
 
-Full spec: `docs/MVP_SPEC.md`. Read it before starting a new stage.
-
-## Three things that make this different
-
-1. **Slides are first-class input.** Action items often live on a slide and are never spoken aloud. Transcript-only tools lose 100% of that. This is the flagship capability.
-2. **Typed extraction, not prose.** Output is queryable rows, not paragraphs.
-3. **Cross-meeting commitment ledger.** "You promised Sarah a pricing model three weeks ago, it's still open, she's on this call."
-
-If a proposed feature doesn't serve one of these, it is out of scope.
+`docs/MVP_SPEC.md` describes a larger, suspended product (typed extraction, gap
+detection, a cross-meeting commitment ledger). It is the long-term vision and
+**does not describe what is being built.** Do not implement from it.
 
 ## Current phase
 
-**PHASE 1.** Goal: migrations + `ingest` + `asr` + `keyframes` + `align`, and a CLI that takes an audio file and a screen recording and prints the interleaved timeline.
+**v0.1.** Goal: `meetinglens process <mp4> --transcript <vtt>` writes a markdown
+file worth reading.
 
-No LLM calls. No OCR. No web UI. No capture.
+Pipeline: `ingest -> keyframes -> transcript -> ocr -> align -> export`.
 
-Phase 1 is done when `make demo FILE=...` prints something like:
+**No LLM. No VLM. No embeddings. No web UI. No capture. No Postgres. No Docker.**
 
-```
-[00:04:12] SLIDE  "Q3 Roadmap — 1. Migrate warehouse  2. Kill legacy API"
-[00:04:15] OTHER  so yeah, these are the priorities
-[00:04:22] SELF   who owns the second one?
-```
+If a task seems to need one of those, it belongs to v0.2. Stop and leave a
+`TODO(v0.2)` interface rather than starting it.
 
-Do not start Phase 2 work. If a Phase 1 task seems to need a Phase 2 component, stub the interface and leave `TODO(phase2)`.
+## Why it is worth building
 
-Phases 2–5 are in `docs/MVP_SPEC.md` §8.
+1. **Slides are first-class input.** Action items often live on a slide and are
+   never spoken aloud. Transcript-only tools lose 100% of that.
+2. **Teams already gives you speaker-attributed text.** The `.vtt` alongside a
+   recording carries real participant names, so v0.1 needs no ASR and no
+   diarization on the fast path.
+3. **The compression is the headline.** An hour of video becomes about 30 images
+   and 3 MB, and unlike video those are searchable.
 
 ## Hard rules
 
-1. **Never call an LLM SDK directly from pipeline code.** Everything goes through `core.llm.base.LLMProvider`. Config selects the implementation. This makes the local-vs-cloud comparison empirical.
-2. **Fabrication is the only unrecoverable failure.** Every extracted item must carry at least one evidence reference that resolves to a real row. Items with unresolvable refs are dropped, not repaired. Prefer under-extraction.
-3. **Never infer a date, owner, or figure that was not stated or shown.** `NULL` is a correct answer.
-4. **Stages are idempotent and resumable.** Re-running `extract` must not require re-running `asr`. State lives in the `job` table.
-5. **No native platform APIs before Phase 4.** If a task needs ScreenCaptureKit, WASAPI, or PipeWire, write the interface and `TODO(phase4)`. Do not attempt it.
-6. **Local-first.** No audio, frames, or transcripts leave the machine unless `LLM_PROVIDER` is explicitly set to a cloud provider. Never add telemetry.
-7. **Ship one phase complete** rather than five phases half-built.
+1. **No language model anywhere in v0.1.** The tool must be incapable of
+   fabricating. If an output cannot be derived mechanically from the input, it
+   does not ship in v0.1.
+2. **Stages are idempotent and resumable.** Re-running `export` must not
+   re-decode the video. State lives in the `job` table.
+3. **Decode once, at 1 fps, at the decoder.** `-vf fps=1`. Decoding 30 fps and
+   discarding frames is the difference between thirty seconds and twenty minutes.
+4. **Local-first.** Nothing leaves the machine. Never add telemetry.
+5. **No native platform APIs.** Capture is not in scope. Write the interface and
+   `TODO(v0.2)`.
+6. **Never record a meeting silently.** Teams announces its own recording, which
+   is why it is the supported source. Do not add OBS or any other quiet
+   recorder: in a workplace that is a policy and legal risk, not a feature.
+7. **Install simplicity outranks architectural preference.** One command, no
+   Docker, no brew, no database server. This is why the project uses SQLite
+   despite Postgres being the convention everywhere else.
 
 ## Known traps
 
-- **whisper.cpp word-level timestamps are unreliable.** Whisper was not trained to emit meaningful per-word timing; precision rounds to ~1s and can desync. Use **WhisperX** (forced alignment) when word-level timing matters. Segment-level from whisper.cpp is fine for the timeline.
-- **Do not decode video at 30 fps and discard frames.** Sample at 1 fps at the decoder (`-vf fps=1`). Decoding everything is the difference between 30 seconds and 20 minutes.
-- **Diarization: use the two-track shortcut.** `track='mic'` is the user, `track='system'` is everyone else. Do not add pyannote in Phase 1. This single distinction covers "what did *I* commit to," which is most of the value.
-- **Animated slide builds** produce near-duplicate frames. Keep the **last** stable frame of a build, not the first.
-- **ScreenCaptureKit audio is not isolated** — notifications and music get mixed in. Relevant in Phase 4.
+- **Do not decode video at 30 fps and discard frames.** Sample at 1 fps at the
+  decoder. See hard rule 3.
+- **Animated slide builds** produce near-duplicate frames. Two mechanisms handle
+  this: the 2 s stability gate discards mid-build states automatically, and the
+  post-OCR superset merge catches builds the presenter talked over. Do not add
+  pixel heuristics for it.
+- **Gallery view, idle desktop and embedded video playback** are all removed by
+  one rule: the post-OCR text density filter. Frames with almost no text are
+  worthless for notes and are a privacy problem. Do not write per-case detectors.
+- **Teams composites participant thumbnails over shared content**, so OCR picks
+  up names and interface noise. Expected. The density filter and superset merge
+  absorb most of it.
+- **dHash threshold and the stability window are not yet calibrated** against a
+  real Teams recording. Both are configurable and both are expected to move.
+- **whisper word-level timestamps are unreliable** on the fallback path. Segment
+  level is fine for the timeline.
 
 ## Stack
 
-Python 3.11+ · FastAPI · PostgreSQL 16 + pgvector · plain Postgres-backed job queue (no Celery, no Redis) · whisper.cpp / WhisperX · PaddleOCR · Ollama for LLM and VLM · Next.js + TypeScript · ffmpeg via subprocess.
+Python 3.11+ | SQLite | ffmpeg via `imageio-ffmpeg` (bundled in the wheel) |
+RapidOCR on ONNXRuntime | typer | Pillow | numpy | structlog.
+
+Optional extra `[asr]`: faster-whisper, used only when no `.vtt` exists.
 
 Do not introduce new infrastructure without an entry in `docs/DECISIONS.md`.
+Adding a dependency needs a reason that survives hard rule 7.
 
 ## Layout
 
 ```
-api/            FastAPI app
-worker/stages/  one module per pipeline stage — the heart of the project
-core/           config, db, models, llm providers, media helpers
-migrations/     numbered SQL, forward-only
-evals/          golden set + metrics; build this early, not last
-cli/            developer entry point
-web/            Next.js frontend (Phase 2+)
-docs/           MVP_SPEC.md, DECISIONS.md
-storage/        gitignored media
+src/meetinglens/
+    cli.py          typer entry point
+    config.py       settings
+    db.py           sqlite connection + migration runner
+    stages/         one module per pipeline stage
+    media/          ffmpeg helpers
+migrations/         numbered SQL, forward-only
+tests/
+docs/               MVP_SPEC.md (suspended vision), DECISIONS.md, specs/
 ```
 
 ## Conventions
 
-- Type hints everywhere. `mypy` clean.
+- Type hints everywhere. `mypy` strict, clean.
 - `ruff` for lint and format. Run `make check` before declaring anything done.
-- SQL migrations are forward-only and numbered `NNNN_name.sql`. Never edit an applied migration.
-- Timestamps inside a meeting are **integer milliseconds from meeting start**, named `*_ms`. Wall-clock times are `TIMESTAMPTZ`, named `*_at`. Do not mix them.
-- Every stage gets a test with a small fixture. No fixture over 10 MB in git.
-- Commit messages: `stage(asr): ...`, `db: ...`, `eval: ...`.
+- SQL migrations are forward-only and numbered `NNNN_name.sql`. Never edit an
+  applied migration.
+- Timestamps inside a meeting are **integer milliseconds from meeting start**,
+  named `*_ms`. Wall-clock times are ISO 8601 text, named `*_at`. Do not mix.
+- Every stage gets a test with a small fixture. **No media files in git, ever** -
+  fixtures are generated at test time.
+- Commit messages: `stage(keyframes): ...`, `db: ...`, `cli: ...`, `docs: ...`.
 
 ## Skills
 
-`.claude/skills/` contains conventions for recurring work. Read the relevant one before starting:
+`.claude/skills/` holds conventions for recurring work.
 
-| Skill | When |
-|---|---|
-| `pipeline-stage` | adding or changing anything in `worker/stages/` |
-| `db-migration` | any schema change |
-| `grounded-extraction` | any LLM call that produces structured output |
-| `eval-harness` | adding metrics or golden fixtures |
+| Skill | When | Status |
+|---|---|---|
+| `pipeline-stage` | adding or changing anything in `stages/` | current |
+| `db-migration` | any schema change | current, but SQLite now, not Postgres |
+| `grounded-extraction` | any LLM call producing structured output | **v0.2, not used** |
+| `eval-harness` | metrics and golden fixtures | **v0.2, not used** |
 
 ## When you are unsure
 
-Ask before: adding a dependency, changing the schema in a way that drops data, or starting a phase that isn't the current one. Don't ask before: writing tests, refactoring inside a module, or improving error messages.
+Ask before: adding a dependency, changing the schema in a way that drops data,
+or starting v0.2 work. Don't ask before: writing tests, refactoring inside a
+module, or improving error messages.
