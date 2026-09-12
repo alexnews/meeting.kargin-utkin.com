@@ -1,88 +1,166 @@
 # MeetingLens
 
-Local-first meeting intelligence. Ingests meeting audio **and** the screen recording, and produces a typed, source-grounded record of what was decided and promised — then carries those commitments forward into the next meeting with the same people.
+Turn a Microsoft Teams recording into one markdown file: the transcript
+interleaved with every slide that was on screen, each slide's text extracted,
+thumbnails inline, real speaker names.
 
-Not a transcript summarizer. Action items frequently live on a slide and are never spoken aloud; transcript-only tools lose all of it.
+Action items very often live on a slide and are never spoken aloud. Someone
+shares a list of five deliverables and says "yeah, so, these". A transcript-only
+tool loses all of it.
 
-## Why
+**There is no language model anywhere in this.** Every line of the output is a
+mechanical transformation of the input, so it cannot invent a commitment that
+nobody made.
 
-Every meeting tool summarizes one meeting in prose. Three things are missing:
+## What it produces
 
-1. **Slides as input.** "Yeah, so, these" over a list of five deliverables is meaningless as text and obvious with the frame attached.
-2. **Typed output.** Decisions, commitments, owners, dates as rows you can query and diff — not paragraphs.
-3. **Memory across meetings.** What you promised three weeks ago, still open, surfaced before the call.
+```markdown
+# weekly sync
 
-## Status
+2026-09-12 | 47 min | 2 slides | 4 turns
 
-**Phase 1 — in progress.** Ingest, transcription, keyframe extraction, timeline alignment. See `docs/MVP_SPEC.md` §8 for the phase plan.
+## Timeline
 
-## Quick start
+### `00:00` Q3 Roadmap
+
+![Q3 Roadmap](keyframes/0000.webp)
+
+> Q3 Roadmap
+> 1. Migrate warehouse
+> 2. Kill legacy API
+> 3. Pricing model - AK - Fri
+> 4. Hire two engineers
+
+**`00:01` Alex Kargin (you):** Let us start with the roadmap for the quarter.
+
+**`00:06` Sarah Chen:** So yeah, these are the priorities.
+
+### `00:09` Revenue
+...
+```
+
+Line three of that slide, `Pricing model - AK - Fri`, was never said out loud.
+That is the whole point.
+
+## Install
+
+One command. No Docker, no database server, no Homebrew. ffmpeg ships inside the
+wheel and the OCR models ship with it, so a first run downloads nothing.
 
 ```bash
-make setup      # venv, deps, .env
-make up         # postgres + pgvector
-make migrate
-make demo AUDIO=path/to/audio.wav VIDEO=path/to/screen.mp4
+uv tool install git+https://github.com/alexnews/meeting.kargin-utkin.com
 ```
 
-Phase 1's only deliverable is that last command printing an interleaved timeline:
+## Use
 
+```bash
+meetinglens process ~/Downloads/"weekly sync.mp4" -t ~/Downloads/"weekly sync.vtt"
 ```
-[00:04:12] SLIDE  "Q3 Roadmap — 1. Migrate warehouse  2. Kill legacy API"
-[00:04:15] OTHER  so yeah, these are the priorities
-[00:04:22] SELF   who owns the second one?
+
+That writes `~/Documents/MeetingLens/2026-09-12-weekly-sync/` containing the
+markdown file and its images. Open it in Obsidian, or anything that reads
+markdown.
+
+### Getting the two files out of Teams
+
+1. Record the meeting in Teams, with transcription on.
+2. Afterwards, open the meeting chat or the recording in OneDrive.
+3. Download the `.mp4`, and download the transcript as `.vtt`.
+
+Teams announces the recording to everybody in the call, which is how consent is
+meant to work. Do not run a silent third-party recorder at work instead.
+
+**No transcript?** It still works. Install the fallback with
+`uv tool install "meetinglens[asr] @ git+https://github.com/alexnews/meeting.kargin-utkin.com"`
+and the audio is transcribed locally with faster-whisper. That costs a model
+download and you lose the speaker names.
+
+### Marking which voice is yours
+
+```bash
+export MEETINGLENS_SELF_NAME="Alex Kargin"   # exactly as Teams writes it
 ```
+
+Your lines then read `Alex Kargin (you):`.
 
 ## How it works
 
 ```
-ingest → asr → keyframes → ocr → caption → align → extract → gaps → ledger → index
+ingest -> keyframes -> transcript -> ocr -> export
 ```
 
-Each stage is idempotent and resumable, so fixing a prompt never means re-transcribing an hour of audio.
+The interesting part is `keyframes`. Video is decoded **once**, at one frame per
+second, straight to small grayscale frames through a pipe. Each frame gets a
+24x24 difference hash, and a new keyframe is committed only when the screen has
+held still for two seconds, which discards crossfades and mid-transition frames.
 
-The keyframe stage is where the compression comes from: sample at 1 fps, dHash each frame, commit a keyframe only when the screen has been stable for two seconds. A one-hour presentation goes from roughly 1–2 GB of video to about thirty WebP images and 3 MB — and unlike video, those are indexable.
+Two rules then decide what survives, both applied after text extraction rather
+than on pixel statistics, because it is simpler and works better:
+
+- **Text density.** A frame with almost no text is worthless as a note. One
+  threshold removes gallery view, the idle desktop and video playback at once.
+  It is also the privacy control: frames of people's faces never reach a
+  document.
+- **Superset merge.** If a frame's text contains the previous frame's text, the
+  earlier one was a slide still building. It is dropped and the later frame
+  takes over its span.
+
+Dropped frames are marked, not deleted, so thresholds can be retuned and the
+export rebuilt without touching the video again.
+
+### Measured
+
+On an M-series Mac, against a generated three minute 720p recording with ten
+topics, each with an animated build:
+
+| | |
+|---|---|
+| End to end | **4.7 s** for 3 minutes of video |
+| Slides found | 10 of 10, builds collapsed to their finished state |
+| OCR | about 0.3 s per slide |
+
+An hour of real 1080p video should land in the low minutes. Expect roughly
+thirty images and a few megabytes out of a recording measured in gigabytes.
+
+Two numbers worth knowing, because they were surprises. The textbook 64-bit
+difference hash **cannot tell slides apart**: measured on rendered slides,
+adding a bullet moved 3 bits while a completely different slide moved 7. Hashing
+at 24x24 gives 12 against 38. And the comparison has to be anchored on the most
+recent frame, not on the frame a keyframe opened with, or a slide that builds
+drifts far enough that the next slide looks like its own stale opening state.
+Both are pinned by tests. See `docs/DECISIONS.md`.
+
+## What it does not do
+
+Deliberately, for now: no summarisation, no extracted action items, no language
+model, no live capture, no web interface, no cloud. It reads recordings you
+already have and writes a file you already know how to read.
 
 ## Privacy
 
-Everything runs locally by default. Audio, frames and transcripts do not leave the machine unless `LLM_PROVIDER` is explicitly pointed at a cloud provider. No telemetry.
+Everything runs on your machine. Nothing is uploaded, there is no account, and
+there is no telemetry. The database is one SQLite file in `~/.meetinglens/`.
 
-Screen capture sees more than audio ever did — Slack DMs, password managers, other people's data. Capture is scoped to the meeting window and pauses when sharing stops.
+Screen recordings see more than audio ever did: Slack messages, password
+managers, other people's confidential material. The text density rule means
+frames without meaningful text are never written to an export, but read
+`SECURITY.md` before pointing this at anything sensitive.
 
-Recording participants without disclosure is illegal in two-party-consent states and under GDPR. The consent prompt is part of the capture flow, not an afterthought.
+## Development
 
-## Deployment — meeting.kargin-utkin.com
-
-The product is local-first, so the domain is **not** where the app runs. Three things live there:
-
-| Path | What | Stack |
-|---|---|---|
-| `/` | Landing page: the problem, the slide-dedup demo, download links | Next.js static export |
-| `/docs` | Install guide, architecture, the decision log | same |
-| `/evals` | Public eval table — metrics per model, updated per release | static JSON from `evals/results/` |
-
-Publishing the eval numbers is the point. "Here is commitment recall and fabrication rate across four models on a ten-meeting golden set" is a more convincing artifact than any landing page copy, and almost nobody in this category publishes it.
-
-Deploy as a static build behind Caddy on the existing box. No backend on the public domain — there is nothing to host, and having no server holding meeting data is the product claim.
-
-Optional later: a hosted demo at `/try` that processes a sample recording server-side. Keep it strictly on a fixture, never user uploads.
-
-## Layout
-
-```
-api/            FastAPI (local only)
-worker/stages/  one module per pipeline stage
-core/           config, db, llm providers, media helpers
-migrations/     numbered SQL, forward-only
-evals/          golden set + metrics
-cli/            developer entry point
-web/            Next.js — landing, docs, eval table
-docs/           MVP_SPEC.md, DECISIONS.md
+```bash
+make setup    # venv and editable install
+make test     # 57 tests
+make check    # ruff and mypy strict
 ```
 
-## Working on this with Claude Code
+No media file is ever committed. Every test fixture, including encoded video, is
+generated at test time; `scripts/check_no_media.py` fails the build if a
+recording or anything over 10 MB is staged.
 
-`CLAUDE.md` holds the project rules; `.claude/skills/` holds conventions for recurring work (pipeline stages, migrations, grounded extraction, evals). Read `CLAUDE.md` first — the hard rules there exist because breaking them has a specific cost, not as style preferences.
+- `docs/superpowers/specs/2026-09-11-meetinglens-v0.1-design.md` is the design.
+- `docs/DECISIONS.md` is why things are the way they are.
+- `docs/MVP_SPEC.md` is a larger, suspended plan. It is not what is built.
 
 ## License
 
