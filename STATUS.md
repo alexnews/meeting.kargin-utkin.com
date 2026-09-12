@@ -41,19 +41,27 @@ and semantic search, native capture.
 ## Where things stand
 
 Repository is public at `git@github.com:alexnews/meeting.kargin-utkin.com.git`,
-pushed, on `main`. Two commits. No application code exists yet: the ten stage
-stubs in `worker/stages/` all raise `NotImplementedError`, and `core/config.py`,
-`core/db.py`, `cli/` entry points and `worker/run.py` do not exist.
+pushed, on `main`.
 
-`migrations/0001_init.sql` is real but is **now obsolete**: it is Postgres with
-pgvector and the schema assumes mic/system tracks. It gets replaced by a SQLite
-schema in the rewrite.
+Two calibration findings are already locked in by tests, see DECISIONS 0007 and
+0008: the textbook 64-bit dHash cannot tell slides apart (a different slide
+moved 7 bits, adding a bullet moved 3), so hashing is 24x24 with a threshold of
+24; and a keyframe's image comes from the last frame of its span, which resolves
+animated builds to the finished slide with no build detection.
+
+## Built and working
+
+- Package installs: `make setup` then `.venv/bin/meetinglens --help`.
+- SQLite schema, forward-only migration runner, idempotent and tested.
+- `ingest`: probes the recording, writes the meeting row.
+- `keyframes`: decodes once at 1 fps, 24x24 dHash, stability gate, writes WebP.
+  Proven end to end against a generated video, not mocks.
+- 28 tests, ruff clean, mypy strict clean.
 
 ## In flight
 
-Rewriting `docs/superpowers/specs/2026-09-11-meetinglens-delivery-design.md`.
-Most of it is wrong after the pivot: Postgres, Docker, the five-phase plan, the
-mic/system diarization shortcut, and the cassette layer for LLM calls all go.
+Next: `transcript` (Teams .vtt parser, then the faster-whisper fallback), then
+`ocr`, then `align` and `export`.
 
 ## Blocked on the owner
 
@@ -64,8 +72,9 @@ mic/system diarization shortcut, and the cassette layer for LLM calls all go.
 
 ## Known broken
 
-- Every `make` target fails. The modules they invoke do not exist yet.
-- The public README advertises a quick start that does not work, and now also
-  describes the wrong architecture. Rewritten as part of v0.1.
+- `meetinglens process` exits 2. It is wired to the database but no stages are
+  connected to it yet.
+- The public README advertises a quick start that does not work and describes
+  the wrong architecture. Rewritten once export lands.
 - `docs/MVP_SPEC.md` describes the suspended plan. It stays as the long-term
   vision but no longer describes what is being built.

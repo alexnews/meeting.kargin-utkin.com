@@ -9,10 +9,23 @@ tested without a video file. See tests/test_keyframe_detect.py.
 
 from __future__ import annotations
 
+import shutil
+import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 
-from meetinglens.media.dhash import hamming
+from meetinglens.config import Settings
+from meetinglens.media.dhash import dhash_from_gray, hamming, to_hex
+from meetinglens.media.ffmpeg import extract_still, sample_gray_frames
+from meetinglens.stages.base import is_done, require_meeting, running
+
+STAGE = "keyframes"
+
+# Side of the square grayscale frame the decoder hands the hasher. Large enough
+# that a 24x24 hash has real detail to work with, small enough that an hour of
+# video is tens of megabytes through a pipe rather than gigabytes.
+SAMPLE_SIDE = 128
 
 
 @dataclass(frozen=True)
@@ -111,3 +124,66 @@ def detect(
         )
         for item in committed
     ]
+
+
+def run(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    meeting_id: int,
+    *,
+    force: bool = False,
+) -> int:
+    """Detect keyframes for a meeting and write them. Returns how many were kept.
+
+    Idempotent: the stage clears its own output before writing, so running it
+    twice leaves exactly the state running it once did.
+    """
+    meeting = require_meeting(conn, meeting_id)
+    if not force and is_done(conn, meeting_id, STAGE):
+        row = conn.execute(
+            "SELECT count(*) AS n FROM keyframe WHERE meeting_id = ?", (meeting_id,)
+        ).fetchone()
+        return int(row["n"])
+
+    video = Path(str(meeting["source_path"]))
+    interval_ms = 1000 // settings.keyframe_fps
+    images = settings.storage_dir / f"meeting-{meeting_id:06d}" / "keyframes"
+
+    with running(conn, meeting_id, STAGE):
+        hashes = [
+            dhash_from_gray(frame)
+            for frame in sample_gray_frames(video, fps=settings.keyframe_fps, side=SAMPLE_SIDE)
+        ]
+        found = detect(
+            hashes,
+            frame_interval_ms=interval_ms,
+            threshold=settings.dhash_threshold,
+            stability_ms=settings.stability_ms,
+        )
+
+        conn.execute("DELETE FROM keyframe WHERE meeting_id = ?", (meeting_id,))
+        shutil.rmtree(images, ignore_errors=True)
+        images.mkdir(parents=True, exist_ok=True)
+
+        for position, keyframe in enumerate(found):
+            destination = images / f"{position:04d}.webp"
+            extract_still(
+                video,
+                at_ms=keyframe.frame_index * interval_ms,
+                destination=destination,
+                quality=settings.webp_quality,
+            )
+            conn.execute(
+                "INSERT INTO keyframe (meeting_id, start_ms, end_ms, image_path, dhash)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (
+                    meeting_id,
+                    keyframe.start_ms,
+                    keyframe.end_ms,
+                    str(destination),
+                    to_hex(keyframe.dhash),
+                ),
+            )
+        conn.commit()
+
+    return len(found)
