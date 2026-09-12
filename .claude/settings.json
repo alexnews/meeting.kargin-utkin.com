@@ -2,26 +2,51 @@
   "permissions": {
     "allow": [
       "Bash(make *)",
-      "Bash(docker compose *)",
-      "Bash(ffmpeg *)",
-      "Bash(ffprobe *)",
-      "Bash(psql *)",
+      "Bash(uv *)",
+      "Bash(python3 *)",
+      "Bash(.venv/bin/python *)",
       "Bash(.venv/bin/pytest *)",
       "Bash(.venv/bin/ruff *)",
       "Bash(.venv/bin/mypy *)",
-      "Bash(git status)",
-      "Bash(git diff *)",
-      "Bash(git log *)"
+      "Bash(.venv/bin/meetinglens *)",
+      "Bash(ffmpeg *)",
+      "Bash(ffprobe *)",
+      "Bash(ls *)",
+      "Bash(cat *)",
+      "Bash(head *)",
+      "Bash(tail *)",
+      "Bash(find *)",
+      "Bash(grep *)",
+      "Bash(wc *)",
+      "Bash(du *)",
+      "Bash(df *)",
+      "Bash(mkdir *)",
+      "Bash(touch *)",
+      "Bash(cp *)",
+      "Bash(mv *)",
+      "Bash(git status*)",
+      "Bash(git diff*)",
+      "Bash(git log*)",
+      "Bash(git show*)",
+      "Bash(git ls-files*)",
+      "Bash(git add *)",
+      "Bash(git rm *)",
+      "Bash(git commit *)",
+      "Bash(git push*)"
     ],
     "ask": [
-      "Bash(git push *)",
-      "Bash(pip install *)",
-      "Bash(npm install *)"
+      "Bash(git reset --hard*)",
+      "Bash(git push --force*)",
+      "Bash(rm -rf *)"
     ],
     "deny": [
       "Read(./.env)",
-      "Read(./storage/**)",
-      "Read(./evals/golden/*/media/**)"
+      "Bash(ssh *)",
+      "Bash(scp *)",
+      "Bash(rsync *)",
+      "Bash(sftp *)",
+      "Bash(mosh *)",
+      "Bash(kubectl *)"
     ]
   }
 }

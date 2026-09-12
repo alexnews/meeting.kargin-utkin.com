@@ -12,7 +12,8 @@ The pipeline is `ingest → asr → keyframes → ocr → caption → align → 
 Every stage module exports exactly:
 
 ```python
-STAGE: str                                    # matches the module name
+STAGE: str  # matches the module name
+
 
 def run(session: Session, meeting_id: int) -> None: ...
 ```

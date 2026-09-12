@@ -82,9 +82,14 @@ Never import a provider SDK in stage code. Go through `core.llm.base.LLMProvider
 
 ```python
 class LLMProvider(Protocol):
-    def complete(self, *, system: str, messages: list[Message],
-                 schema: dict | None = None,
-                 model: str | None = None) -> LLMResult: ...
+    def complete(
+        self,
+        *,
+        system: str,
+        messages: list[Message],
+        schema: dict | None = None,
+        model: str | None = None,
+    ) -> LLMResult: ...
 ```
 
 `LLMResult` carries `text`, `parsed`, `model`, `input_tokens`, `output_tokens`, `cost_usd`, `latency_ms`. Those numbers feed the eval report.
