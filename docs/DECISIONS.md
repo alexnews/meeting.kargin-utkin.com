@@ -136,3 +136,26 @@ title and two bullet lines, hash close together.
 step 6 to 17, a new topic 29 to 44. Frame to frame, a threshold of 24 separates
 them with room on both sides. Returning to a slide after a popup is still one
 keyframe, because the anchor is only rolled while the screen matches.
+
+---
+
+## 0010 — Threshold 12, and why over-splitting is the safe direction
+
+**Context.** 0007 set the threshold to 24 from two measurements. A wider set,
+taken through a real H.264 encode, showed 24 merges slides: two consecutive
+slides that share a layout are only 19 bits apart.
+
+    static slide, encoder noise and a moving thumbnail   5 to 7
+    build step, one bullet appearing                     5 to 8
+    build step, two bullets at once                      17
+    slide change, same layout as the one before          19
+    slide change, different layout                       29 to 44
+
+**Decision.** Threshold 12, near the low end of the usable 9 to 18 window.
+
+**Consequence.** A build that adds two bullets at once (17) now splits into two
+keyframes. That is deliberate and harmless: the post-OCR superset pass collapses
+it, because text can distinguish a build from a new slide with certainty where a
+perceptual hash cannot. The asymmetry is the whole argument. Splitting too
+eagerly is recoverable in the next stage; merging two real slides deletes one
+from the output permanently. Bias low.

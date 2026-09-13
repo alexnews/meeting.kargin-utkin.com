@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MeetingLens</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f6f6f4; --card: #ffffff; --ink: #1a1a1a; --muted: #6b6b6b;
+    --line: #e2e2de; --accent: #1f6feb; --accent-ink: #ffffff;
+    --warn-bg: #fff7e0; --warn-ink: #7a5800; --bad-bg: #fdeceb; --bad-ink: #8c2018;
+    --quote: #f2f2ef;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16171a; --card: #1e2024; --ink: #e8e8e6; --muted: #9a9a97;
+      --line: #2c2f34; --accent: #4c8dff; --accent-ink: #0b0c0e;
+      --warn-bg: #2e2611; --warn-ink: #e8c46a; --bad-bg: #2e1715; --bad-ink: #f0a49c;
+      --quote: #24262b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; padding: 28px 20px 80px; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 6px; }
+  h1 { font-size: 22px; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin-bottom: 28px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
+       color: var(--muted); margin: 32px 0 12px; font-weight: 600; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 14px 16px; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .grow { flex: 1 1 260px; min-width: 0; }
+  .name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--muted); font-size: 13px; margin-top: 2px; }
+  button {
+    font: inherit; font-weight: 600; border: 1px solid var(--line);
+    background: var(--card); color: var(--ink);
+    padding: 8px 14px; border-radius: 7px; cursor: pointer; white-space: nowrap;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button.primary:hover:not(:disabled) { opacity: .9; color: var(--accent-ink); }
+  button:disabled { opacity: .5; cursor: default; }
+  .tag { font-size: 12px; padding: 3px 8px; border-radius: 20px;
+         background: var(--quote); color: var(--muted); white-space: nowrap; }
+  .tag.warn { background: var(--warn-bg); color: var(--warn-ink); }
+  .empty { color: var(--muted); padding: 18px 2px; }
+  .note { background: var(--warn-bg); color: var(--warn-ink);
+          padding: 12px 14px; border-radius: 8px; font-size: 14px; margin-bottom: 10px; }
+  .bad { background: var(--bad-bg); color: var(--bad-ink);
+         padding: 12px 14px; border-radius: 8px; font-size: 14px; white-space: pre-wrap; }
+  .bar { height: 4px; background: var(--quote); border-radius: 3px;
+         overflow: hidden; margin-top: 10px; width: 100%; }
+  .bar i { display: block; height: 100%; background: var(--accent); width: 20%;
+           animation: slide 1.1s ease-in-out infinite; }
+  @keyframes slide { 0% { margin-left: -20%; } 100% { margin-left: 100%; } }
+  .stamp { font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+           color: var(--muted); }
+  .slide img { max-width: 100%; border-radius: 8px; border: 1px solid var(--line);
+               display: block; margin: 10px 0; }
+  .slide pre { background: var(--quote); padding: 10px 12px; border-radius: 8px;
+               white-space: pre-wrap; font: 13px/1.5 ui-monospace, Menlo, monospace;
+               margin: 0; overflow-x: auto; }
+  .turn { margin: 8px 0; }
+  .who { font-weight: 600; }
+  .who.self { color: var(--accent); }
+  a.back { color: var(--accent); cursor: pointer; text-decoration: none; font-size: 14px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><h1>MeetingLens</h1><span class="sub" id="version"></span></header>
+  <div class="sub">Everything runs on this Mac. Nothing is uploaded.</div>
+  <div id="main"></div>
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const main = $("main");
+let polling = null;
+
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const stamp = (ms) => {
+  const total = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(total / 3600), m = Math.floor((total % 3600) / 60), s = total % 60;
+  const mm = String(m).padStart(2, "0"), ss = String(s).padStart(2, "0");
+  return h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+};
+
+async function api(path, options) {
+  const res = await fetch(path, options);
+  return res.json();
+}
+
+async function home() {
+  if (polling) { clearInterval(polling); polling = null; }
+  const [recordings, meetings] = await Promise.all([
+    api("/api/recordings"), api("/api/meetings")
+  ]);
+
+  let html = "<h2>Recordings on this Mac</h2>";
+  if (!recordings.length) {
+    html += `<div class="empty">No recordings found in Downloads, Desktop, Movies or Documents.
+      <br><br>Download a Teams recording (the <b>.mp4</b>) and its transcript (the <b>.vtt</b>)
+      into your Downloads folder, then <a class="back" onclick="home()">refresh</a>.</div>`;
+  }
+  for (const r of recordings) {
+    const tag = r.transcript
+      ? `<span class="tag">transcript found</span>`
+      : `<span class="tag warn">no transcript</span>`;
+    html += `<div class="card">
+      <div class="grow">
+        <div class="name">${esc(r.name)}</div>
+        <div class="meta">${esc(r.folder)} &middot; ${r.sizeMb} MB</div>
+      </div>
+      ${tag}
+      <button class="primary" onclick='start(${JSON.stringify(r)})'>Process</button>
+    </div>`;
+  }
+
+  html += "<h2>Processed meetings</h2>";
+  if (!meetings.length) {
+    html += `<div class="empty">Nothing processed yet.</div>`;
+  }
+  for (const m of meetings) {
+    const when = (m.startedAt || "").slice(0, 10);
+    html += `<div class="card">
+      <div class="grow">
+        <div class="name">${esc(m.title)}</div>
+        <div class="meta">${esc(when)} &middot; ${m.slides} slides &middot; ${m.turns} turns</div>
+      </div>
+      <button onclick="view(${m.id})">View</button>
+    </div>`;
+  }
+  main.innerHTML = html;
+}
+
+async function start(recording) {
+  const job = await api("/api/process", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      video: recording.video, transcript: recording.transcript, title: recording.title
+    })
+  });
+  if (job.error) { main.innerHTML = `<div class="bad">${esc(job.error)}</div>`; return; }
+  watch(job.id);
+}
+
+function watch(jobId) {
+  const render = (job) => {
+    if (job.stage === "done") {
+      clearInterval(polling); polling = null;
+      let html = `<h2>Finished</h2>`;
+      if (job.warning) html += `<div class="note">${esc(job.warning)}</div>`;
+      html += `<div class="card">
+        <div class="grow">
+          <div class="name">${esc(job.title)}</div>
+          <div class="meta">${job.slides} slides &middot; ${job.turns} turns</div>
+        </div>
+        <button onclick='reveal(${JSON.stringify(job.folder)})'>Show in Finder</button>
+        <button class="primary" onclick="view(${job.meetingId})">View</button>
+      </div>
+      <div class="card"><div class="grow"><div class="meta">Saved to</div>
+        <div class="name" style="font-weight:400">${esc(job.folder)}</div></div></div>
+      <p><a class="back" onclick="home()">&larr; Back</a></p>`;
+      main.innerHTML = html;
+      return;
+    }
+    if (job.stage === "failed") {
+      clearInterval(polling); polling = null;
+      main.innerHTML = `<h2>Failed</h2><div class="bad">${esc(job.error)}</div>
+        <p><a class="back" onclick="home()">&larr; Back</a></p>`;
+      return;
+    }
+    main.innerHTML = `<h2>Working</h2><div class="card"><div class="grow">
+      <div class="name">${esc(job.title)}</div>
+      <div class="meta">${esc(job.label)}</div>
+      <div class="bar"><i></i></div>
+    </div></div>`;
+  };
+
+  if (polling) clearInterval(polling);
+  polling = setInterval(async () => render(await api(`/api/jobs/${jobId}`)), 600);
+  api(`/api/jobs/${jobId}`).then(render);
+}
+
+async function reveal(folder) {
+  await api("/api/reveal", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ folder })
+  });
+}
+
+async function view(meetingId) {
+  if (polling) { clearInterval(polling); polling = null; }
+  const data = await api(`/api/meeting/${meetingId}`);
+  let html = `<p><a class="back" onclick="home()">&larr; Back</a></p>
+    <h2>${esc(data.title)}</h2>`;
+  for (const entry of data.entries || []) {
+    if (entry.kind === "slide") {
+      html += `<div class="slide"><div class="stamp">${stamp(entry.atMs)}</div>
+        <img src="${entry.image}" alt="slide">
+        <pre>${esc(entry.text)}</pre></div>`;
+    } else {
+      html += `<div class="turn"><span class="stamp">${stamp(entry.atMs)}</span>
+        <span class="who ${entry.isSelf ? "self" : ""}">${esc(entry.speaker)}${
+          entry.isSelf ? " (you)" : ""}:</span> ${esc(entry.text)}</div>`;
+    }
+  }
+  main.innerHTML = html;
+  window.scrollTo(0, 0);
+}
+
+home();
+</script>
+</body>
+</html>

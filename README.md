@@ -42,6 +42,21 @@ nobody made.
 Line three of that slide, `Pricing model - AK - Fri`, was never said out loud.
 That is the whole point.
 
+## Two ways to use it
+
+**A window**, if you would rather click than type:
+
+```bash
+meetinglens ui
+```
+
+That opens a page in your browser listing the recordings already sitting in your
+Downloads, Desktop, Movies and Documents folders, each with a Process button. It
+runs entirely on your machine, serves only to localhost, and loads nothing from
+the internet.
+
+**Or one command**, if you prefer the terminal. Both do the same work.
+
 ## Install
 
 One command. No Docker, no database server, no Homebrew. ffmpeg ships inside the
@@ -122,13 +137,32 @@ topics, each with an animated build:
 An hour of real 1080p video should land in the low minutes. Expect roughly
 thirty images and a few megabytes out of a recording measured in gigabytes.
 
-Two numbers worth knowing, because they were surprises. The textbook 64-bit
-difference hash **cannot tell slides apart**: measured on rendered slides,
-adding a bullet moved 3 bits while a completely different slide moved 7. Hashing
-at 24x24 gives 12 against 38. And the comparison has to be anchored on the most
-recent frame, not on the frame a keyframe opened with, or a slide that builds
-drifts far enough that the next slide looks like its own stale opening state.
-Both are pinned by tests. See `docs/DECISIONS.md`.
+Three findings worth knowing, all of them surprises, all pinned by tests. See
+`docs/DECISIONS.md`.
+
+The textbook 64-bit difference hash **cannot tell slides apart**: adding a bullet
+moved 3 bits while a completely different slide moved 7. Hashing at 24x24 gives
+12 against 38.
+
+The comparison must be anchored on the **most recent** frame, not the frame a
+keyframe opened with. A slide that builds drifts far enough that the next slide
+starts to resemble its stale opening state, and two topics went missing that way.
+
+And the threshold sits deliberately low, at 12 out of 576 bits:
+
+| | distance |
+|---|---|
+| static slide, noise and a moving thumbnail | 5 to 7 |
+| build step, one bullet | 5 to 8 |
+| build step, two bullets at once | 17 |
+| slide change, same layout | 19 |
+| slide change, different layout | 29 to 44 |
+
+A build that adds two bullets at once is nearly indistinguishable from a real
+slide change by hash alone, so the keyframe stage is allowed to over-split and
+the superset pass cleans up afterwards, where text can tell them apart with
+certainty. That asymmetry is the point: splitting too eagerly is recoverable one
+stage later, merging two real slides deletes one permanently.
 
 ## What it does not do
 
@@ -150,7 +184,7 @@ frames without meaningful text are never written to an export, but read
 
 ```bash
 make setup    # venv and editable install
-make test     # 57 tests
+make test     # 64 tests
 make check    # ruff and mypy strict
 ```
 

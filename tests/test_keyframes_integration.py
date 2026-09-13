@@ -9,7 +9,7 @@ import pytest
 from PIL import Image
 
 from meetinglens.config import Settings
-from meetinglens.stages import ingest, keyframes
+from meetinglens.stages import ingest, keyframes, ocr
 from tests.slides import render_slide
 from tests.video import Scene, write_video
 
@@ -28,25 +28,33 @@ def _two_slide_recording(path: Path) -> Path:
     )
 
 
-def test_a_two_slide_recording_yields_two_keyframes(
+def test_a_two_slide_recording_ends_up_as_two_slides(
     conn: sqlite3.Connection, settings: Settings, tmp_path: Path
 ) -> None:
-    """The roadmap build is one keyframe; revenue is the second.
+    """Two layers, and the split between them is deliberate.
 
-    The first two scenes are the same slide gaining bullets, which stays inside
-    the hash threshold and must therefore not split into two keyframes.
+    The recording is one slide gaining two bullets at once, then a different
+    slide. A jump that large is close enough to a real slide change that the
+    hash cannot safely tell them apart, so the keyframe stage is allowed to
+    over-split. The OCR superset pass then collapses the build, because text
+    can tell them apart with certainty. Splitting too eagerly is recoverable;
+    merging two real slides is not.
     """
     video = _two_slide_recording(tmp_path / "sync.mp4")
     meeting_id = ingest.run(conn, video, title="Weekly Sync")
-    kept = keyframes.run(conn, settings, meeting_id)
+    detected = keyframes.run(conn, settings, meeting_id)
+    assert detected >= 2
 
-    assert kept == 2
+    kept = ocr.run(conn, settings, meeting_id)
+    assert kept == 2, "after text is read, the build must collapse to one slide"
+
     rows = conn.execute(
-        "SELECT start_ms, end_ms, image_path FROM keyframe WHERE meeting_id = ? ORDER BY start_ms",
+        "SELECT start_ms, end_ms, image_path FROM keyframe"
+        " WHERE meeting_id = ? AND dropped = 0 ORDER BY start_ms",
         (meeting_id,),
     ).fetchall()
     assert rows[0]["start_ms"] == 0
-    assert rows[1]["start_ms"] == pytest.approx(8000, abs=1500)
+    assert rows[1]["start_ms"] == pytest.approx(9000, abs=1500)
     for row in rows:
         assert Path(row["image_path"]).exists()
         with Image.open(row["image_path"]) as image:
@@ -67,9 +75,11 @@ def test_the_kept_image_is_the_finished_build_not_the_first_step(
     video = _two_slide_recording(tmp_path / "sync.mp4")
     meeting_id = ingest.run(conn, video, title="Weekly Sync")
     keyframes.run(conn, settings, meeting_id)
+    ocr.run(conn, settings, meeting_id)
 
     first = conn.execute(
-        "SELECT image_path FROM keyframe WHERE meeting_id = ? ORDER BY start_ms LIMIT 1",
+        "SELECT image_path FROM keyframe WHERE meeting_id = ? AND dropped = 0"
+        " ORDER BY start_ms LIMIT 1",
         (meeting_id,),
     ).fetchone()
     with Image.open(first["image_path"]) as saved:

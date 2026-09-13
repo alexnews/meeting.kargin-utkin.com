@@ -101,6 +101,19 @@ def process(
     typer.echo(str(result.markdown))
 
 
+@app.command()
+def ui(
+    port: Annotated[int, typer.Option("--port", help="Local port to listen on.")] = 8765,
+    no_browser: Annotated[
+        bool, typer.Option("--no-browser", help="Do not open a browser window.")
+    ] = False,
+) -> None:
+    """Open the MeetingLens window."""
+    from meetinglens.ui import serve
+
+    serve(Settings.load(), port=port, open_browser=not no_browser)
+
+
 @db_app.command("path")
 def db_path() -> None:
     """Print the database file location."""
