@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from meetinglens.media.ffmpeg import probe
+from meetinglens.session import Session
 from meetinglens.stages.base import running
 
 STAGE = "ingest"
@@ -66,6 +67,37 @@ def run(
                 info.duration_ms,
                 meeting_id,
             ),
+        )
+        conn.commit()
+    return meeting_id
+
+
+def run_session(
+    conn: sqlite3.Connection,
+    session: Session,
+    *,
+    title: str | None = None,
+) -> int:
+    """Create or refresh the meeting row for a captured session."""
+    resolved = str(session.directory.resolve())
+    existing = conn.execute("SELECT id FROM meeting WHERE source_path = ?", (resolved,)).fetchone()
+    meeting_id = int(existing["id"]) if existing else 0
+    chosen = title or session.title
+
+    if meeting_id == 0:
+        cursor = conn.execute(
+            "INSERT INTO meeting (title, source_path, started_at, duration_ms, status)"
+            " VALUES (?, ?, ?, ?, 'processing')",
+            (chosen, resolved, session.started_at, session.duration_ms),
+        )
+        conn.commit()
+        meeting_id = int(cursor.lastrowid or 0)
+
+    with running(conn, meeting_id, STAGE):
+        conn.execute(
+            "UPDATE meeting SET title = ?, started_at = ?, duration_ms = ?,"
+            " status = 'processing' WHERE id = ?",
+            (chosen, session.started_at, session.duration_ms, meeting_id),
         )
         conn.commit()
     return meeting_id

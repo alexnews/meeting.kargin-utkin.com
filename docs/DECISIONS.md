@@ -159,3 +159,39 @@ it, because text can distinguish a build from a new slide with certainty where a
 perceptual hash cannot. The asymmetry is the whole argument. Splitting too
 eagerly is recoverable in the next stage; merging two real slides deletes one
 from the output permanently. Bias low.
+
+---
+
+## 0011 — Record audio and screens, never a video
+
+**Context.** The first design ingested a screen recording. A meeting video is
+hundreds of megabytes an hour, almost all of it the same slide held still, and
+the owner has 16 GB of disk free. It also assumed the meeting platform would
+record on request, which many workplaces do not allow.
+
+**Decision.** Capture audio at speech bitrate plus a screenshot only when the
+screen changes. No video file is ever written.
+
+**Consequence.** Measured on a real capture: 27 MB an hour for two audio tracks
+and about 4 MB for thirty screens, so roughly 31 MB an hour against roughly 800
+MB for a screen recording. Two audio devices captured separately also restore
+the mic-versus-system speaker split from 0002 without any extra software, since
+a meeting application installs its own audio device.
+
+---
+
+## 0012 — Narrow the capture, and never photograph the whole screen silently
+
+**Context.** The first real capture test photographed the entire screen. The
+OCR output contained an inbox address, browser tabs and plainly private
+material. That is the documented hazard in SECURITY.md, demonstrated in
+twenty seconds.
+
+**Decision.** `--app`, `--display` and `--region` narrow what is captured.
+Whole-screen capture requires an explicit confirmation, or `--whole-screen` when
+not attached to a terminal. A `preview` command takes one screenshot of the
+chosen target and opens it, recording nothing.
+
+**Consequence.** The safe thing is the default and the unsafe thing is loud.
+`--region` is the strongest option because anything outside the rectangle is
+never read at all, and unlike `--app` it needs no Accessibility permission.
